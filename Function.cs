@@ -2,76 +2,45 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Amazon.Lambda.DynamoDBEvents;
-using Amazon.DynamoDBv2.DocumentModel;
-using Newtonsoft.Json;
-using Amazon.DynamoDBv2.Model;
+using Amazon.Lambda.APIGatewayEvents;
 using Amazon.DynamoDBv2;
-using Amazon.Lambda.Serialization.SystemTextJson;
-using Amazon.Lambda.Serialization.Json;
-//using Amazon.Lambda.APIGatewayEvents;
+using Amazon.DynamoDBv2.DocumentModel;
+using Amazon.DynamoDBv2.Model;
+using Newtonsoft.Json;
+
 using Amazon.Lambda.Core;
 
+// Assembly attribute to enable the Lambda function's JSON input to be converted into a .NET class.
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.Json.JsonSerializer))]
 
-namespace getStatsByType2021
+namespace Assignment7GetTypeStats
 {
-    public class ratingObject
+    [Serializable]
+    public class StatsClass
     {
         public string type;
-        public int count;
-        //public int avgRating;
-        //public string itemId;
-        public int rating;
-        //public string itemId;
-        //public string description;
-        //public int rating;
-        //public string type;
-        //public string company;
+        public double totalRating;
+        public double count;
+        public double averageRating;
     }
     public class Function
     {
         private static AmazonDynamoDBClient client = new AmazonDynamoDBClient();
-        public async Task<List<ratingObject>> FunctionHandler(DynamoDBEvent input, ILambdaContext context)
+        private string tableName = "RatingsByType";
+        public async Task<StatsClass> FunctionHandler(APIGatewayProxyRequest input, ILambdaContext context)
         {
-            Table table = Table.LoadTable(client, "RatingsByType");
-            List<ratingObject> items = new List<ratingObject>();
-            List<DynamoDBEvent.DynamodbStreamRecord> records = (List<DynamoDBEvent.DynamodbStreamRecord>)input.Records;
-            if (records.Count > 0)
-            {
-                DynamoDBEvent.DynamodbStreamRecord record = records[0];
-                if (record.EventName.Equals("INSERT"))
+            string type = "";
+            Dictionary<string, string> dict = (Dictionary<string, string>)input.QueryStringParameters;
+            dict.TryGetValue("type", out type);
+            GetItemResponse res = await client.GetItemAsync(tableName, new Dictionary<string, AttributeValue>
                 {
-                    Document myDoc = Document.FromAttributeMap(record.Dynamodb.NewImage);
-                    ratingObject myItem = JsonConvert.DeserializeObject<ratingObject>(myDoc.ToJson());
-
-                    var request = new UpdateItemRequest
-                    {
-                        TableName = "RatingsByType",
-                        Key = new Dictionary<string, AttributeValue>
-                        {
-                            { "type", new AttributeValue { S = myItem.type} }
-                        },
-                        AttributeUpdates = new Dictionary<string, AttributeValueUpdate>()
-                        {
-                            {
-                                "count",
-                                new AttributeValueUpdate { Action = "ADD", Value = new AttributeValue { N = "1"} }
-                            },
-                            {
-                                "totalRating",
-                                new AttributeValueUpdate { Action = "ADD", Value = new AttributeValue { N = myItem.rating.ToString() }}
-                            },
-                            //{
-                            //    "avgRating",
-                            //    new AttributeValueUpdate { Action = "ADD", Value = new AttributeValue { N = (myItem.rating/myItem.count + 1).ToString() }}
-                            //},
-                        },
-                    };
-                    await client.UpdateItemAsync(request);
+                    {"type", new AttributeValue { S = type } }
                 }
-            }
-            return items;
+            );
+            Document myDoc = Document.FromAttributeMap(res.Item);
+            StatsClass myItem = JsonConvert.DeserializeObject<StatsClass>(myDoc.ToJson());
+            myItem.averageRating = Math.Round(myItem.totalRating / myItem.count, 1);
+            return myItem;
         }
     }
 }
